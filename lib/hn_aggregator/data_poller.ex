@@ -21,7 +21,8 @@ defmodule HnAggregator.DataPoller do
   @hn_top_stories_endpoint "https://hacker-news.firebaseio.com/v0/topstories.json"
 
   def start_link(args) do
-    GenServer.start_link(__MODULE__, args, name: __MODULE__)
+    name = Keyword.get(args, :name, __MODULE__)
+    GenServer.start_link(__MODULE__, args, name: name)
   end
 
   def init(args) do
