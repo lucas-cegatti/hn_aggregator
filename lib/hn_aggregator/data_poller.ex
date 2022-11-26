@@ -53,10 +53,14 @@ defmodule HnAggregator.DataPoller do
          {:ok, data} <- parse_response(body) do
       schedule_next_poll(poll_interval)
 
+      :telemetry.execute([:data_poller, :http_status], %{value: 200})
+
       {:noreply, %{state | data: data, retries: 0}, {:continue, :process_response}}
     else
       {:ok, {{_, status_code, _}, _header, _body}} ->
         Logger.error("HTTP call failed due to unsupported status code #{status_code}")
+
+        :telemetry.execute([:data_poller, :http_status], %{value: status_code})
 
         {:noreply, %{state | data: state.data, retries: retries + 1},
          {:continue, :process_http_invalid_status}}
@@ -83,7 +87,21 @@ defmodule HnAggregator.DataPoller do
     {:noreply, state}
   end
 
-  def handle_continue(:process_http_invalid_status, _state) do
+  def handle_continue(
+        :process_http_invalid_status,
+        %{retries: retries, max_retries: max_retries} = state
+      ) do
+    if retries == max_retries do
+      Schema.mark_data_as_expired()
+
+      Logger.warn("Max retries reached, data polling will be halted until manual start")
+
+      :telemetry.execute([:data_poller, :poll_halted], %{total: 1})
+    else
+      schedule_next_poll(retries * 60)
+    end
+
+    {:noreply, state}
   end
 
   defp parse_response(body) do

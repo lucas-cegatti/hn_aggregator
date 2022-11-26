@@ -1,6 +1,12 @@
 defmodule HnAggregator.Schema do
   @moduledoc """
   Schema that stores the HN data into memory.
+
+  It was built to support more than one type of data source, it need to be implemented but it then can be given as an argument when starting the GenServer.
+
+  Arguments:
+
+  - `data_source` type of data source to store data, default `:mnesia`
   """
   use GenServer
 
@@ -33,7 +39,17 @@ defmodule HnAggregator.Schema do
 
   def get_all() do
     Mnesia.transaction(fn ->
-      Mnesia.match_object({@hn_data_table, :_, :_})
+      Mnesia.match_object({@hn_data_table, :_, :_, :_})
+    end)
+  end
+
+  def mark_data_as_expired() do
+    Mnesia.transaction(fn ->
+      data = Mnesia.match_object(@hn_data_table, {@hn_data_table, :_, :_, false}, :write)
+
+      Enum.map(data, fn {table, id, uri, _expired_data} ->
+        Mnesia.write({table, id, uri, true})
+      end)
     end)
   end
 
@@ -49,7 +65,10 @@ defmodule HnAggregator.Schema do
 
     Mnesia.start()
 
-    Mnesia.create_table(@hn_data_table, attributes: [:id, :fetch_uri], type: :ordered_set)
+    Mnesia.create_table(@hn_data_table,
+      attributes: [:id, :fetch_uri, :expired_data],
+      type: :ordered_set
+    )
   end
 
   def handle_cast({:save, data}, %{data_source: :mnesia} = state) do
@@ -60,7 +79,8 @@ defmodule HnAggregator.Schema do
     Mnesia.transaction(fn ->
       Enum.map(data, fn item_id ->
         Mnesia.write(
-          {@hn_data_table, item_id, "https://hacker-news.firebaseio.com/v0/item/#{item_id}.json?"}
+          {@hn_data_table, item_id, "https://hacker-news.firebaseio.com/v0/item/#{item_id}.json?",
+           false}
         )
       end)
     end)
