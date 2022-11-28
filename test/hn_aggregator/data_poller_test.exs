@@ -63,8 +63,7 @@ defmodule HnAggregator.DataPollerTest do
   end
 
   describe "poll" do
-    test "it increases number of retries when not 200 is returned" do
-
+    test "it increases number of retries when status other then 200 is returned" do
     end
   end
 end

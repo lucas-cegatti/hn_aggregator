@@ -17,6 +17,7 @@ defmodule HnAggregator.DataPoller do
   require Logger
 
   alias HnAggregator.Schema
+  alias HnAggregator.Validator
 
   @hn_top_stories_endpoint "https://hacker-news.firebaseio.com/v0/topstories.json"
 
@@ -50,7 +51,8 @@ defmodule HnAggregator.DataPoller do
         %{poll_interval: poll_interval, hn_endpoint: hn_endpoint, retries: retries} = state
       ) do
     with {:ok, {{_, 200, _}, _header, body}} <- :httpc.request(hn_endpoint),
-         {:ok, data} <- parse_response(body) do
+         {:ok, data} <- parse_response(body),
+         :ok <- validate_data(data) do
       schedule_next_poll(poll_interval)
 
       :telemetry.execute([:data_poller, :http_status], %{value: 200})
@@ -62,14 +64,17 @@ defmodule HnAggregator.DataPoller do
 
         :telemetry.execute([:data_poller, :http_status], %{value: status_code})
 
-        {:noreply, %{state | data: state.data, retries: retries + 1},
-         {:continue, :process_http_invalid_status}}
+        {:noreply, %{state | data: state.data, retries: retries + 1}, {:continue, :process_error}}
 
       {:error, %Jason.DecodeError{} = error} ->
         Logger.error(error)
 
-        {:noreply, %{state | data: state.data, retries: retries + 1},
-         {:continue, :process_http_invalid_status}}
+        {:noreply, %{state | data: state.data, retries: retries + 1}, {:continue, :process_error}}
+
+      {:error, :validation_failed} ->
+        Logger.error("HN response failed on validation, expected value is an array of integer")
+
+        {:noreply, %{state | data: state.data, retries: retries + 1}, {:continue, :process_error}}
     end
   end
 
@@ -77,7 +82,7 @@ defmodule HnAggregator.DataPoller do
   Handle continue are called after a poll is made on the given HN endpoint. The following are each message:
 
   - `:process_response` a successfull call was made and no errors were found, it will continue by saving the data at the given Schema.
-  - `process_http_invalid_status` an unsupported http status code was returned, it will increase the number of retries and try again based on its exponential backoff rule
+  - `process_error` an unsupported http status code was returned, json decode failed or validation failed it will increase the number of retries and try again based on its exponential backoff rule
   """
   def handle_continue(:process_response, %{data: data} = state) do
     to_save_data = Enum.take(data, 50)
@@ -88,7 +93,7 @@ defmodule HnAggregator.DataPoller do
   end
 
   def handle_continue(
-        :process_http_invalid_status,
+        :process_error,
         %{retries: retries, max_retries: max_retries} = state
       ) do
     if retries == max_retries do
@@ -106,6 +111,13 @@ defmodule HnAggregator.DataPoller do
 
   defp parse_response(body) do
     Jason.decode(body)
+  end
+
+  defp validate_data(data) do
+    case Validator.validate_type(data, {:array, :int}) do
+      :ok -> :ok
+      {:error, _} -> {:error, :validation_failed}
+    end
   end
 
   defp schedule_next_poll(interval) do
