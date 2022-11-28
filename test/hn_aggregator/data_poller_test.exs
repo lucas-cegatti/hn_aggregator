@@ -3,6 +3,8 @@ defmodule HnAggregator.DataPollerTest do
 
   alias HnAggregator.DataPoller
 
+  import ExUnit.CaptureLog
+
   @test_poller_module TestPoller
 
   describe "start_link/1" do
@@ -62,8 +64,56 @@ defmodule HnAggregator.DataPollerTest do
     end
   end
 
-  describe "poll" do
-    test "it increases number of retries when status other then 200 is returned" do
+  describe "handle_info/2 :poll" do
+    setup do
+      state = %{
+        poll_interval: 300,
+        hn_endpoint: "https://hacker-news.firebaseio.com/v0/topstories.json",
+        retries: 0,
+        data: []
+      }
+
+      [
+        state: state
+      ]
     end
+
+    test "it increases number of retries when status other then 200 is returned", %{state: state} do
+      assert {:noreply, %{retries: 1, data: []}, {:continue, :process_error}} =
+               DataPoller.handle_info(:poll, %{
+                 state
+                 | hn_endpoint: "https://fake-http.fly.dev/api/500"
+               })
+    end
+
+    test "it fails on validation when a list is not returned on response", %{state: state} do
+      assert capture_log(fn ->
+               assert {:noreply, %{retries: 1, data: []}, {:continue, :process_error}} =
+                        DataPoller.handle_info(:poll, %{
+                          state
+                          | hn_endpoint: "https://fake-http.fly.dev/api/200"
+                        })
+             end) =~ "HN response failed on validation, expected value is an array of integer"
+    end
+
+    test "it fails when an response other then json is returned", %{state: state} do
+      assert capture_log(fn ->
+               assert {:noreply, %{retries: 1, data: []}, {:continue, :process_error}} =
+                        DataPoller.handle_info(:poll, %{
+                          state
+                          | hn_endpoint: "https://fake-http.fly.dev/api/200?response_type=html"
+                        })
+             end) =~ "Could not parse response, json is expected"
+    end
+
+    test "it successfully retrives and parse a message from HN", %{state: state} do
+      assert {:noreply, %{data: data, retries: 0}, {:continue, :process_response}} =
+               DataPoller.handle_info(:poll, state)
+
+      assert length(data) == 500
+    end
+  end
+
+  describe "handle_continue/2 :process_error" do
   end
 end

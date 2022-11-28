@@ -15,5 +15,6 @@ defmodule HnAggregator.Validator do
     end
   end
 
+  def validate_type(_value, {:array, _type}), do: {:error, "it must be an array"}
   def validate_type(_value, type), do: {:error, "#{type} not supported or invalid value given"}
 end

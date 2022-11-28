@@ -66,8 +66,8 @@ defmodule HnAggregator.DataPoller do
 
         {:noreply, %{state | data: state.data, retries: retries + 1}, {:continue, :process_error}}
 
-      {:error, %Jason.DecodeError{} = error} ->
-        Logger.error(error)
+      {:error, %Jason.DecodeError{}} ->
+        Logger.error("Could not parse response, json is expected")
 
         {:noreply, %{state | data: state.data, retries: retries + 1}, {:continue, :process_error}}
 
