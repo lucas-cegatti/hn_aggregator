@@ -102,11 +102,13 @@ defmodule HnAggregator.DataPoller do
       Logger.warn("Max retries reached, data polling will be halted until manual start")
 
       :telemetry.execute([:data_poller, :poll_halted], %{total: 1})
-    else
-      schedule_next_poll(retries * 60)
-    end
 
-    {:noreply, state}
+      {:noreply, state}
+    else
+      time_ref = schedule_next_poll(retries * 60)
+
+      {:noreply, Map.put(state, :time_ref, time_ref)}
+    end
   end
 
   defp parse_response(body) do

@@ -8,9 +8,11 @@ defmodule HnAggregator.Schema do
 
   - `data_source` type of data source to store data, default `:mnesia`
   """
+
   use GenServer
 
   alias :mnesia, as: Mnesia
+  alias HnAggregator.Model
 
   @hn_data_table HnData
 
@@ -34,13 +36,14 @@ defmodule HnAggregator.Schema do
   - `data` is an array of ids to be saved
   """
   def save(data) do
-    GenServer.cast(__MODULE__, {:save, data})
+    GenServer.call(__MODULE__, {:save, data})
   end
 
+  @doc """
+  Retrieves all records from the data source
+  """
   def get_all() do
-    Mnesia.transaction(fn ->
-      Mnesia.match_object({@hn_data_table, :_, :_, :_})
-    end)
+    GenServer.call(__MODULE__, :get_all)
   end
 
   def mark_data_as_expired() do
@@ -71,7 +74,7 @@ defmodule HnAggregator.Schema do
     )
   end
 
-  def handle_cast({:save, data}, %{data_source: :mnesia} = state) do
+  def handle_call({:save, data}, _from, %{data_source: :mnesia} = state) do
     Mnesia.transaction(fn ->
       Mnesia.clear_table(@hn_data_table)
     end)
@@ -87,6 +90,17 @@ defmodule HnAggregator.Schema do
 
     Logger.warn("Records successfully saved to mnesia")
 
-    {:noreply, state}
+    {:reply, :ok, state}
+  end
+
+  def handle_call(:get_all, _from, %{data_source: :mnesia} = state) do
+    {:atomic, data} =
+      Mnesia.transaction(fn ->
+        Mnesia.match_object({@hn_data_table, :_, :_, :_})
+      end)
+
+    model_data = Model.new(:mnesia, data)
+
+    {:reply, model_data, state}
   end
 end

@@ -1,7 +1,7 @@
 defmodule HnAggregator.DataPollerTest do
   use ExUnit.Case
 
-  alias HnAggregator.DataPoller
+  alias HnAggregator.{DataPoller, Schema}
 
   import ExUnit.CaptureLog
 
@@ -115,5 +115,68 @@ defmodule HnAggregator.DataPollerTest do
   end
 
   describe "handle_continue/2 :process_error" do
+    setup do
+      state = %{
+        poll_interval: 300,
+        hn_endpoint: "https://hacker-news.firebaseio.com/v0/topstories.json",
+        retries: 0,
+        max_retries: 5,
+        data: []
+      }
+
+      [
+        state: state
+      ]
+    end
+
+    test "it does not schedule next process when max retries is reached", %{state: state} do
+      assert capture_log(fn ->
+               assert {:noreply, state} =
+                        DataPoller.handle_continue(:process_error, %{state | retries: 5})
+
+               assert nil == Map.get(state, :time_ref)
+             end) =~ "Max retries reached, data polling will be halted until manual start"
+    end
+
+    test "it schedules next process if max retries is not reached", %{state: state} do
+      assert {:noreply, new_state} =
+               DataPoller.handle_continue(:process_error, %{state | retries: 1})
+
+      assert :timer.seconds(60) == Process.read_timer(new_state.time_ref)
+    end
+
+    test "next retry is increased considering the current number of retries", %{state: state} do
+      assert {:noreply, new_state} =
+               DataPoller.handle_continue(:process_error, %{state | retries: 4})
+
+      assert :timer.seconds(60 * 4) == Process.read_timer(new_state.time_ref)
+    end
+  end
+
+  describe "handle_continue/2 process_response" do
+    setup do
+      state = %{
+        poll_interval: 300,
+        hn_endpoint: "https://hacker-news.firebaseio.com/v0/topstories.json",
+        retries: 0,
+        max_retries: 5,
+        data: []
+      }
+
+      [
+        state: state
+      ]
+    end
+
+    test "it saves a list of stories to schema", %{state: state} do
+      data = StreamData.positive_integer() |> Enum.take(500) |> Enum.uniq()
+
+      assert {:noreply, _state} =
+               DataPoller.handle_continue(:process_response, %{state | data: data})
+
+      saved_data = Schema.get_all()
+
+      assert length(saved_data) == 50
+    end
   end
 end
