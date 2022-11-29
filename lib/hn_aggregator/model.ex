@@ -3,6 +3,8 @@ defmodule HnAggregator.Model do
   A struct model that will map the data from the data source
   """
 
+  @derive Jason.Encoder
+
   defstruct [:id, :detail_url, :expired_data]
 
   @type t :: %__MODULE__{

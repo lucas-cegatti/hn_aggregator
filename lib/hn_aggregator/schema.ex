@@ -131,7 +131,7 @@ defmodule HnAggregator.Schema do
           {:error, :invalid_data}
       end
 
-    {:reply, result, state}
+    {:reply, result, state, {:continue, :send_new_stories_event}}
   end
 
   def handle_call(:get_all, _from, %{data_source: :mnesia, table_name: table_name} = state) do
@@ -193,7 +193,30 @@ defmodule HnAggregator.Schema do
       end)
     end)
 
-    {:reply, :ok, state}
+    {:reply, :ok, state, {:continue, :send_new_stories_event}}
+  end
+
+  @doc """
+  Broadcast event when any data change happens on the schema
+  """
+  def handle_continue(
+        :send_new_stories_event,
+        %{table_name: table_name, data_source: :mnesia} = state
+      ) do
+    {:atomic, data} =
+      Mnesia.transaction(fn ->
+        Mnesia.match_object({table_name, :_, :_, :_})
+      end)
+
+    parsed_data =
+      Model.new(:mnesia, data)
+      |> Jason.encode!()
+
+    HnAggregatorWeb.Endpoint.broadcast("hn:top_stories", "hn_new_data", %{
+      "data" => parsed_data
+    })
+
+    {:noreply, state}
   end
 
   defp decode_base64_offset(offset) do
