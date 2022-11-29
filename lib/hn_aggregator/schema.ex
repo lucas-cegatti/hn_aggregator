@@ -19,15 +19,17 @@ defmodule HnAggregator.Schema do
   require Logger
 
   def start_link(args) do
-    GenServer.start_link(__MODULE__, args, name: __MODULE__)
+    name = Keyword.get(args, :name, __MODULE__)
+    GenServer.start_link(__MODULE__, args, name: name)
   end
 
   def init(args) do
     data_source = Keyword.get(args, :data_source, :mnesia)
+    table_name = Keyword.get(args, :table_name, @hn_data_table)
 
-    create(data_source)
+    create(data_source, table_name)
 
-    {:ok, %{data_source: data_source}}
+    {:ok, %{data_source: data_source, table_name: table_name}}
   end
 
   @doc """
@@ -35,25 +37,44 @@ defmodule HnAggregator.Schema do
 
   - `data` is an array of ids to be saved
   """
-  def save(data) do
-    GenServer.call(__MODULE__, {:save, data})
+  def save(data, name \\ __MODULE__) do
+    GenServer.call(name, {:save, data})
   end
 
   @doc """
   Retrieves all records from the data source
   """
-  def get_all() do
-    GenServer.call(__MODULE__, :get_all)
+  @spec get_all(module()) :: [Model.t()]
+  def get_all(name \\ __MODULE__) do
+    GenServer.call(name, :get_all)
   end
 
-  def mark_data_as_expired() do
-    Mnesia.transaction(fn ->
-      data = Mnesia.match_object(@hn_data_table, {@hn_data_table, :_, :_, false}, :write)
+  @doc """
+  Gets the records paginated by 10 records per page.
 
-      Enum.map(data, fn {table, id, uri, _expired_data} ->
-        Mnesia.write({table, id, uri, true})
-      end)
-    end)
+  `cont` - the offset to get the next page, if nil returns the first page
+
+  Returns the data and the next offset to continue
+  """
+  @spec get_paginated(binary(), module()) :: {binary(), [Model.t()]}
+  def get_paginated(cont, name \\ __MODULE__)
+
+  def get_paginated(cont, name) do
+    GenServer.call(name, {:get_paginated, cont})
+  end
+
+  @doc """
+  Marks all data as expired by setting the attribute `expired_data` as true
+  """
+  def mark_data_as_expired(name \\ __MODULE__) do
+    GenServer.call(name, :mark_data_as_expired)
+  end
+
+  @doc """
+  This function was created to be used at testing cases that needs fresh table before each test
+  """
+  def clear_table(name \\ __MODULE__) do
+    GenServer.call(name, :clear_table)
   end
 
   @doc """
@@ -63,44 +84,111 @@ defmodule HnAggregator.Schema do
 
   It's possible to support different types of schemas, if necessary, like ets, for example.
   """
-  def create(:mnesia) do
+  def create(:mnesia, table_name) do
     Mnesia.create_schema([node()])
 
     Mnesia.start()
 
-    Mnesia.create_table(@hn_data_table,
+    Mnesia.create_table(table_name,
       attributes: [:id, :fetch_uri, :expired_data],
       type: :ordered_set
     )
   end
 
-  def handle_call({:save, data}, _from, %{data_source: :mnesia} = state) do
+  def handle_call(:clear_table, _from, %{data_source: :mnesia, table_name: table_name} = state) do
     Mnesia.transaction(fn ->
-      Mnesia.clear_table(@hn_data_table)
+      Mnesia.clear_table(table_name)
     end)
-
-    Mnesia.transaction(fn ->
-      Enum.map(data, fn item_id ->
-        Mnesia.write(
-          {@hn_data_table, item_id, "https://hacker-news.firebaseio.com/v0/item/#{item_id}.json?",
-           false}
-        )
-      end)
-    end)
-
-    Logger.warn("Records successfully saved to mnesia")
 
     {:reply, :ok, state}
   end
 
-  def handle_call(:get_all, _from, %{data_source: :mnesia} = state) do
+  def handle_call({:save, data}, _from, %{data_source: :mnesia, table_name: table_name} = state) do
+    Mnesia.transaction(fn ->
+      Mnesia.clear_table(table_name)
+    end)
+
+    result =
+      Mnesia.transaction(fn ->
+        Enum.map(data, fn item_id ->
+          Mnesia.write(
+            {table_name, item_id, "https://hacker-news.firebaseio.com/v0/item/#{item_id}.json?",
+             false}
+          )
+        end)
+      end)
+      |> case do
+        {:atomic, _results} ->
+          Logger.warn("Records successfully saved to mnesia")
+          :ok
+
+        {:aborted, _results} ->
+          {:error, :invalid_data}
+      end
+
+    {:reply, result, state}
+  end
+
+  def handle_call(:get_all, _from, %{data_source: :mnesia, table_name: table_name} = state) do
     {:atomic, data} =
       Mnesia.transaction(fn ->
-        Mnesia.match_object({@hn_data_table, :_, :_, :_})
+        Mnesia.match_object({table_name, :_, :_, :_})
       end)
 
     model_data = Model.new(:mnesia, data)
 
     {:reply, model_data, state}
+  end
+
+  def handle_call(
+        {:get_paginated, nil},
+        _from,
+        %{data_source: :mnesia, table_name: table_name} = state
+      ) do
+    match_spec = [{{table_name, :"$1", :"$2", :"$3"}, [{:>, :"$1", 0}], [:"$$"]}]
+
+    {data, cont} =
+      Mnesia.async_dirty(fn ->
+        Mnesia.select(table_name, match_spec, 10, :read)
+      end)
+
+    cont = :erlang.term_to_binary(cont) |> Base.encode64()
+    model_data = Model.new(:mnesia, data)
+
+    {:reply, {cont, model_data}, state}
+  end
+
+  def handle_call({:get_paginated, cont}, _from, %{data_source: :mnesia} = state) do
+    next_page = cont |> Base.decode64!() |> :erlang.binary_to_term()
+
+    Mnesia.async_dirty(fn ->
+      Mnesia.select(next_page)
+    end)
+    |> case do
+      :"$end_of_table" ->
+        {:reply, {:end_of_page, []}, state}
+
+      {data, cont} ->
+        cont = :erlang.term_to_binary(cont) |> Base.encode64()
+        model_data = Model.new(:mnesia, data)
+
+        {:reply, {cont, model_data}, state}
+    end
+  end
+
+  def handle_call(
+        :mark_data_as_expired,
+        _from,
+        %{data_source: :mnesia, table_name: table_name} = state
+      ) do
+    Mnesia.transaction(fn ->
+      data = Mnesia.match_object(table_name, {table_name, :_, :_, false}, :write)
+
+      Enum.map(data, fn {table, id, uri, _expired_data} ->
+        Mnesia.write({table, id, uri, true})
+      end)
+    end)
+
+    {:reply, :ok, state}
   end
 end

@@ -18,8 +18,15 @@ defmodule HnAggregator.Model do
   def new(data_source, data)
 
   def new(:mnesia, data) do
-    Enum.map(data, fn {_, id, detail_uri, expired_data} ->
-      %__MODULE__{id: id, detail_url: detail_uri, expired_data: expired_data}
-    end)
+    Enum.map(
+      data,
+      fn
+        [id, detail_uri, expired_data] ->
+          %__MODULE__{id: id, detail_url: detail_uri, expired_data: expired_data}
+
+        {_, id, detail_uri, expired_data} ->
+          %__MODULE__{id: id, detail_url: detail_uri, expired_data: expired_data}
+      end
+    )
   end
 end
