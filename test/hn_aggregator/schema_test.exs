@@ -131,7 +131,7 @@ defmodule HnAggregator.SchemaTest do
                Schema.get_paginated(invalid_base64_binary, PaginationTest)
     end
 
-    "TODO: I couldn't find a way to capture the error when an invalid term is given to the offset"
+    @tag :"TODO: I couldn't find a way to capture the error when an invalid term is given to the offset"
     @tag :skip
     test "it returns error when and invalid term is given as on offset" do
       Schema.start_link(name: PaginationTest, table_name: PaginationTest6)
