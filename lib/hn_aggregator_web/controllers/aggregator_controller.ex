@@ -16,6 +16,7 @@ defmodule HnAggregatorWeb.AggregatorController do
   - `next_page` string indicates if theres a next page to be fetch, it returns a base64 offset or `end_of_page` if there's no page
 
   *Example*
+  Succesfull response:
   ```json
   {
     "data": [
@@ -25,9 +26,16 @@ defmodule HnAggregatorWeb.AggregatorController do
         "expired_data": false
       }
     ],
-    next_page: "g2gKZAANbW5lc2lhX3NlbGVjdGQADUVsaXhpci5IbkRhdGFoAmQAC2FzeW5jX2RpcnR5WGQADW5vbm9kZUBub2hvc3QAAAFPAAAAAAAAAABkAA1ub25vZGVAbm9ob3N0ZAAKcmFtX2NvcGllc2gIZAANRWxpeGlyLkhuRGF0YWEfamEKWgADZAANbm9ub2RlQG5vaG9zdAAAAAAAAOeQrg4ABbZhbuBqYQBhAGpkAAl1bmRlZmluZWRkAAl1bmRlZmluZWRsAAAAAWgDaARkAA1FbGl4aXIuSG5EYXRhZAACJDFkAAIkMmQAAiQzbAAAAAFoA2QAAT5kAAIkMWEAamwAAAABZAACJCRqag=="
+    "next_page": "g2gKZAANbW5lc2lhX3NlbGVjdGQADUVsaXhpci5IbkRhdGFoAmQAC2FzeW5jX2RpcnR5WGQADW5vbm9kZUBub2hvc3QAAAFPAAAAAAAAAABkAA1ub25vZGVAbm9ob3N0ZAAKcmFtX2NvcGllc2gIZAANRWxpeGlyLkhuRGF0YWEfamEKWgADZAANbm9ub2RlQG5vaG9zdAAAAAAAAOeQrg4ABbZhbuBqYQBhAGpkAAl1bmRlZmluZWRkAAl1bmRlZmluZWRsAAAAAWgDaARkAA1FbGl4aXIuSG5EYXRhZAACJDFkAAIkMmQAAiQzbAAAAAFoA2QAAT5kAAIkMWEAamwAAAABZAACJCRqag=="
   }
+  ```
 
+  Error Response:
+  ```json
+  {
+    "type": "error",
+    "message":  "invalid_offset"
+  }
   ```
   """
   use HnAggregatorWeb, :controller
