@@ -7,6 +7,8 @@ defmodule HnAggregator.Schema do
   Arguments:
 
   - `data_source` type of data source to store data, default `:mnesia`
+  - `table_name` the name of the data source table to save the data
+  - `name` the module name to be given at start_link/1
   """
 
   use GenServer
@@ -56,7 +58,10 @@ defmodule HnAggregator.Schema do
 
   Returns the data and the next offset to continue
   """
-  @spec get_paginated(binary(), module()) :: {binary(), [Model.t()]}
+  @spec get_paginated(binary() | nil, module()) ::
+          {:ok, {binary(), [Model.t()]}}
+          | {:error, :invalid_offset}
+          | {:error, :invalid_binary_offset}
   def get_paginated(cont, name \\ __MODULE__)
 
   def get_paginated(cont, name) do
@@ -155,24 +160,23 @@ defmodule HnAggregator.Schema do
     cont = :erlang.term_to_binary(cont) |> Base.encode64()
     model_data = Model.new(:mnesia, data)
 
-    {:reply, {cont, model_data}, state}
+    {:reply, {:ok, {cont, model_data}}, state}
   end
 
   def handle_call({:get_paginated, cont}, _from, %{data_source: :mnesia} = state) do
-    next_page = cont |> Base.decode64!() |> :erlang.binary_to_term()
+    with {:ok, decoded_offset} <- decode_base64_offset(cont),
+         {:ok, parsed_offset} <- parse_binary_offset(decoded_offset),
+         {:ok, result} <- mnesia_do_offset_select(parsed_offset) do
+      {:reply, {:ok, result}, state}
+    else
+      {:error, :invalid_offset} ->
+        {:reply, {:error, :invalid_offset}, state}
 
-    Mnesia.async_dirty(fn ->
-      Mnesia.select(next_page)
-    end)
-    |> case do
-      :"$end_of_table" ->
-        {:reply, {:end_of_page, []}, state}
+      {:error, :invalid_binary_offset} ->
+        {:reply, {:error, :invalid_binary_offset}, state}
 
-      {data, cont} ->
-        cont = :erlang.term_to_binary(cont) |> Base.encode64()
-        model_data = Model.new(:mnesia, data)
-
-        {:reply, {cont, model_data}, state}
+      {:error, :invalid_offset_term} ->
+        {:reply, {:error, :invalid_offset_term}, state}
     end
   end
 
@@ -190,5 +194,50 @@ defmodule HnAggregator.Schema do
     end)
 
     {:reply, :ok, state}
+  end
+
+  defp decode_base64_offset(offset) do
+    case Base.decode64(offset) do
+      {:ok, cont} ->
+        {:ok, cont}
+
+      :error ->
+        {:error, :invalid_offset}
+    end
+  end
+
+  defp parse_binary_offset(offset) do
+    try do
+      mnesia_offest = :erlang.binary_to_term(offset)
+
+      {:ok, mnesia_offest}
+    rescue
+      ArgumentError -> {:error, :invalid_binary_offset}
+    end
+  end
+
+  defp mnesia_do_offset_select(offset) do
+    try do
+      Mnesia.async_dirty(fn ->
+        Mnesia.select(offset)
+      end)
+      |> case do
+        :"$end_of_table" ->
+          {:ok, {:end_of_page, []}}
+
+        {:error, _error} ->
+          {:error, :invalid_offset_term}
+
+        {data, cont} ->
+          cont = :erlang.term_to_binary(cont) |> Base.encode64()
+          model_data = Model.new(:mnesia, data)
+
+          {:ok, {cont, model_data}}
+      end
+    catch
+      error ->
+        IO.inspect(error, label: :error)
+        {:error, error}
+    end
   end
 end

@@ -7,6 +7,8 @@ defmodule HnAggregatorWeb.Router do
 
   scope "/api", HnAggregatorWeb do
     pipe_through :api
+
+    get "/top_stories", AggregatorController, :top_stories
   end
 
   # Enables the Swoosh mailbox preview in development.

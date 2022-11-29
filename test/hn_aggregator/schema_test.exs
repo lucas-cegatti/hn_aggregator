@@ -83,7 +83,7 @@ defmodule HnAggregator.SchemaTest do
       data = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
       Schema.save(data)
 
-      assert {cont, data} = Schema.get_paginated(nil)
+      assert {:ok, {cont, data}} = Schema.get_paginated(nil)
 
       refute cont == :end_of_page
 
@@ -95,9 +95,9 @@ defmodule HnAggregator.SchemaTest do
       data = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
       Schema.save(data, PaginationTest)
 
-      assert {cont, _data} = Schema.get_paginated(nil, PaginationTest)
-      assert {cont, _data} = Schema.get_paginated(cont, PaginationTest)
-      assert {:end_of_page, []} = Schema.get_paginated(cont, PaginationTest)
+      assert {:ok, {cont, _data}} = Schema.get_paginated(nil, PaginationTest)
+      assert {:ok, {cont, _data}} = Schema.get_paginated(cont, PaginationTest)
+      assert {:ok, {:end_of_page, []}} = Schema.get_paginated(cont, PaginationTest)
     end
 
     test "it returns all records if length is less than pagination" do
@@ -105,9 +105,44 @@ defmodule HnAggregator.SchemaTest do
       data = [1, 2, 3, 4, 5]
       Schema.save(data, PaginationTest)
 
-      assert {cont, data} = Schema.get_paginated(nil, PaginationTest)
+      assert {:ok, {cont, data}} = Schema.get_paginated(nil, PaginationTest)
       assert length(data) == 5
-      assert {:end_of_page, []} = Schema.get_paginated(cont, PaginationTest)
+      assert {:ok, {:end_of_page, []}} = Schema.get_paginated(cont, PaginationTest)
+    end
+
+    test "it returns error when and invalid offset is given" do
+      Schema.start_link(name: PaginationTest, table_name: PaginationTest4)
+      data = [1, 2, 3, 4, 5]
+      Schema.save(data, PaginationTest)
+
+      invalid_base64 = "abbbccaaa"
+
+      assert {:error, :invalid_offset} = Schema.get_paginated(invalid_base64, PaginationTest)
+    end
+
+    test "it returns error when an invalid binary offset is given" do
+      Schema.start_link(name: PaginationTest, table_name: PaginationTest5)
+      data = [1, 2, 3, 4, 5]
+      Schema.save(data, PaginationTest)
+
+      invalid_base64_binary = Base.encode64("aaaaabbbbb")
+
+      assert {:error, :invalid_binary_offset} =
+               Schema.get_paginated(invalid_base64_binary, PaginationTest)
+    end
+
+    "TODO: I couldn't find a way to capture the error when an invalid term is given to the offset"
+    @tag :skip
+    test "it returns error when and invalid term is given as on offset" do
+      Schema.start_link(name: PaginationTest, table_name: PaginationTest6)
+      data = [1, 2, 3, 4, 5]
+      Schema.save(data, PaginationTest)
+
+      invalid_term = {:some, :invalid, :term}
+
+      invalid_base64_term = Base.encode64(:erlang.term_to_binary(invalid_term))
+
+      assert {:error, :invalid_offset_term} = Schema.get_paginated(invalid_base64_term)
     end
   end
 end
