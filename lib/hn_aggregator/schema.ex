@@ -230,37 +230,32 @@ defmodule HnAggregator.Schema do
   end
 
   defp parse_binary_offset(offset) do
-    try do
-      mnesia_offest = :erlang.binary_to_term(offset)
+    mnesia_offest = :erlang.binary_to_term(offset)
 
-      {:ok, mnesia_offest}
-    rescue
-      ArgumentError -> {:error, :invalid_binary_offset}
-    end
+    {:ok, mnesia_offest}
+  rescue
+    ArgumentError -> {:error, :invalid_binary_offset}
   end
 
   defp mnesia_do_offset_select(offset) do
-    try do
-      Mnesia.async_dirty(fn ->
-        Mnesia.select(offset)
-      end)
-      |> case do
-        :"$end_of_table" ->
-          {:ok, {:end_of_page, []}}
+    Mnesia.async_dirty(fn ->
+      Mnesia.select(offset)
+    end)
+    |> case do
+      :"$end_of_table" ->
+        {:ok, {:end_of_page, []}}
 
-        {:error, _error} ->
-          {:error, :invalid_offset_term}
+      {:error, _error} ->
+        {:error, :invalid_offset_term}
 
-        {data, cont} ->
-          cont = :erlang.term_to_binary(cont) |> Base.encode64()
-          model_data = Model.new(:mnesia, data)
+      {data, cont} ->
+        cont = :erlang.term_to_binary(cont) |> Base.encode64()
+        model_data = Model.new(:mnesia, data)
 
-          {:ok, {cont, model_data}}
-      end
-    catch
-      error ->
-        IO.inspect(error, label: :error)
-        {:error, error}
+        {:ok, {cont, model_data}}
     end
+  rescue
+    error ->
+      {:error, error}
   end
 end

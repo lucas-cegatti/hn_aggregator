@@ -1,4 +1,7 @@
 defmodule HnAggregatorWeb.Telemetry do
+  @moduledoc """
+  Telemetry supervisor
+  """
   use Supervisor
   import Telemetry.Metrics
 

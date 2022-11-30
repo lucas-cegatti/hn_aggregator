@@ -13,7 +13,7 @@ defmodule HnAggregator.Public do
   Retrives all stories from the data source.
   """
   @spec get_all_top_stories() :: {:ok, list()}
-  def get_all_top_stories() do
+  def get_all_top_stories do
     case Schema.get_all() do
       [] ->
         Logger.warn("No stories were found")

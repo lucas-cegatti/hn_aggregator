@@ -5,7 +5,7 @@ defmodule HnAggregator.Application do
 
   use Application
 
-  alias HnAggregator.{Schema, DataPoller}
+  alias HnAggregator.{DataPoller, Schema}
 
   @impl true
   def start(_type, _args) do

@@ -1,4 +1,7 @@
 defmodule HnAggregatorWeb.TopStoriesChannel do
+  @moduledoc """
+  Top stories channel with the broadcast feature
+  """
   use HnAggregatorWeb, :channel
 
   require Logger
